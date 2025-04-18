@@ -162,7 +162,7 @@ class RealHexNode(Node):
         # 设置目标位姿
         self.wTep = self.realhex.fkine(self.realhex.q) * sm.SE3.Rz(np.pi)
         self.wTep.A[:3, :3] = np.diag([-1, 1, -1])
-        self.wTep.A[0, -1] -= 4.0  # 向x轴负方向移动4米
+        self.wTep.A[0, -1] -= 6.0  # 向x轴负方向移动4米
         self.wTep.A[2, -1] -= 0.5  # 向下移动0.3米
         
         # 输出目标位姿（只输出一次）

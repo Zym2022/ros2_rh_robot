@@ -22,12 +22,12 @@ def generate_launch_description():
     world_name = LaunchConfiguration('world_name')
     declare_world_cmd = DeclareLaunchArgument(
         'world_name',
-        default_value='realman.world',
+        default_value='momanip.world',
         description='Gazebo world name')
     # DECLARE Gazebo WORLD file:
     gazebo_world_path = (
-        get_package_share_directory('rm_gazebo'),
-        '/world/',
+        get_package_share_directory('rh_gazebo'),
+        '/config/',
         world_name
     )
 

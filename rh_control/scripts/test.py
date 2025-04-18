@@ -1,6 +1,7 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
 
 import roboticstoolbox as rtb
+import spatialgeometry as sg
 import spatialmath as sm
 import qpsolvers as qp
 import numpy as np
@@ -9,17 +10,17 @@ import threading
 
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist, TransformStamped
+from geometry_msgs.msg import Twist, PoseStamped, Point
 from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import JointState
 from nav_msgs.msg import Odometry
 from transforms3d.euler import quat2euler
-import tf2_ros
-from tf2_ros import TransformBroadcaster
+from visualization_msgs.msg import Marker
+from builtin_interfaces.msg import Duration
+from transforms3d.quaternions import mat2quat
 
 
 def step_robot(r: rtb.ERobot, Tep):
-    """计算机器人的关节速度以达到目标位姿"""
     # 获取当前末端执行器位姿
     wTe = r.fkine(r.q)
 
@@ -93,104 +94,70 @@ def step_robot(r: rtb.ERobot, Tep):
     else:
         return False, qd
 
-class RobotState:
-    """机器人状态类，用于存储和更新机器人的状态信息"""
+
+class RealHexNode(Node):
     def __init__(self):
-        # 关节状态
-        self.joint_positions = {}
-        self.arm_joints = [0.0] * 7  # 7个机械臂关节
+        super().__init__('realhex_node')
         
-        # 底盘状态
-        self.base_x = 0.0
-        self.base_y = 0.0
-        self.base_yaw = 0.0
+        # 创建数据锁
+        self.state_lock = threading.Lock()
         
-        # 状态标志
-        self.joint_state_updated = False
-        self.odom_updated = False
-        
-        # 数据锁
-        self.lock = threading.Lock()
-    
-    def update_joint_state(self, msg):
-        """更新关节状态"""
-        with self.lock:
-            # 创建一个字典，将关节名称映射到它们的位置
-            for i, name in enumerate(msg.name):
-                self.joint_positions[name] = msg.position[i]
-            
-            # 提取机械臂关节
-            for i, joint_name in enumerate(['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6', 'joint7']):
-                if joint_name in self.joint_positions:
-                    self.arm_joints[i] = self.joint_positions[joint_name]
-            
-            self.joint_state_updated = True
-    
-    def update_odom(self, msg):
-        """更新里程计状态"""
-        with self.lock:
-            # 更新底盘位置
-            self.base_x = msg.pose.pose.position.x
-            self.base_y = msg.pose.pose.position.y
-            
-            # 从四元数中提取偏航角
-            orientation_q = msg.pose.pose.orientation
-            _, _, self.base_yaw = quat2euler([orientation_q.w, orientation_q.x, orientation_q.y, orientation_q.z])
-            
-            self.odom_updated = True
-    
-    def get_state(self):
-        """获取当前状态的副本"""
-        with self.lock:
-            return {
-                'arm_joints': self.arm_joints.copy(),
-                'base_x': self.base_x,
-                'base_y': self.base_y,
-                'base_yaw': self.base_yaw,
-                'joint_state_updated': self.joint_state_updated,
-                'odom_updated': self.odom_updated
-            }
-
-
-class RealHexController(Node):
-    def __init__(self):
-        super().__init__('realhex_controller')
-
-        self.count = 0
-        
-        # 创建机器人状态对象
-        self.robot_state = RobotState()
-        
-        # 创建发布器
-        self.joint_pos_publisher = self.create_publisher(
+        # 创建关节速度命令发布器
+        self.joint_vel_publisher = self.create_publisher(
             Float64MultiArray, 
-            '/joint_position_controller/commands', 
-            10
+            '/joint_velocity_controller/commands', 
+            1
         )
         
+        # 创建底盘速度命令发布器
         self.cmd_vel_publisher = self.create_publisher(
             Twist,
             '/cmd_vel',
             1
         )
         
-        # 创建订阅器
+        # 创建目标点可视化发布器
+        self.target_marker_publisher = self.create_publisher(
+            Marker,
+            '/target_marker',
+            10
+        )
+        
+        # 创建关节状态订阅器
         self.joint_state_subscriber = self.create_subscription(
             JointState,
             '/joint_states',
-            self.robot_state.update_joint_state,
+            self.joint_state_callback,
             10
         )
         
+        # 创建里程计订阅器
         self.odom_subscriber = self.create_subscription(
             Odometry,
             '/odom',
-            self.robot_state.update_odom,
+            self.odom_callback,
             10
         )
         
-        # 导入RealHex机器人模型
+        # 创建自定义目标姿态订阅器，替换原来的RViz目标订阅器
+        self.target_pose_subscriber = self.create_subscription(
+            PoseStamped,
+            '/realhex_goal',
+            self.target_pose_callback,
+            10
+        )
+        
+        # 导入必要的模块（在这里导入以避免全局导入问题）
+        import roboticstoolbox as rtb
+        import spatialgeometry as sg
+        import spatialmath as sm
+        import qpsolvers as qp
         from rh_control.realhex import RealHex
+        
+        # 保存模块引用以供后续使用
+        self.rtb = rtb
+        self.sm = sm
+        self.qp = qp
         
         # 创建RealHex机器人实例
         self.realhex = RealHex()
@@ -198,119 +165,236 @@ class RealHexController(Node):
         
         # 初始化机器人位置和目标
         self.realhex.q = self.realhex.qr
-        self.base_transform = self.realhex._T.copy()
-        self.arrived = False
+        self.base_new = self.realhex._T
+        self.arrived = True  # 初始状态为已到达，等待新目标
         
-        # 设置目标位姿
-        self.wTep = self.realhex.fkine(self.realhex.q) * sm.SE3.Rz(np.pi)
-        self.wTep.A[:3, :3] = np.diag([-1, 1, -1])
-        self.wTep.A[0, -1] -= 3.0  # 向x轴负方向移动3米
-        self.wTep.A[2, -1] -= 0.5  # 向下移动0.5米
+        # 初始化底盘位置和方向
+        self.base_x = 0.0
+        self.base_y = 0.0
+        self.base_yaw = 0.0
         
-        # 输出目标位姿
-        target_pos = self.wTep.A[:3, 3]
-        self.get_logger().info(f'目标位姿: 位置=[{target_pos[0]:.2f}, {target_pos[1]:.2f}, {target_pos[2]:.2f}]')
+        # 标记是否已收到关节状态和里程计数据
+        self.joint_state_received = False
+        self.odom_received = False
+        self.target_received = False
+        
+        # 初始化目标位姿
+        self.wTep = None
         
         # 用于控制位姿输出频率的计数器
         self.pose_output_counter = 0
         self.pose_output_interval = 20  # 每20个周期输出一次位姿（约1秒）
         
-        # 创建控制循环定时器
-        self.timer = self.create_timer(0.05, self.control_loop)
+        # 创建定时器，以0.05秒的间隔更新关节角度和发布命令
+        self.timer = self.create_timer(0.05, self.update_and_publish)
         
-        # 存储当前关节位置
-        self.current_joint_positions = [0.0] * (self.realhex.n - 2)
+        # 创建定时器，定期发布目标点标记
+        self.marker_timer = self.create_timer(0.5, self.publish_target_marker)
         
-        self.get_logger().info('RealHex控制器已初始化')
-        
-        # 添加 tf 广播器
-        self.tf_broadcaster = TransformBroadcaster(self)
+        self.get_logger().info('RealHex节点已初始化，等待目标点...')
+        self.get_logger().info('请向 /realhex_goal 话题发送 PoseStamped 消息来设置目标位姿')
     
-    def update_robot_state(self):
-        """从RobotState更新机器人模型状态"""
-        state = self.robot_state.get_state()
+    def joint_state_callback(self, msg):
+        """处理关节状态消息"""
+        # 创建一个字典，将关节名称映射到它们的位置
+        joint_positions = {}
+        for i, name in enumerate(msg.name):
+            joint_positions[name] = msg.position[i]
         
-        if not (state['joint_state_updated'] and state['odom_updated']):
-            return False
+        # 只提取我们需要的关节(joint1-joint7)，按照正确的顺序
+        arm_joints = []
+        for joint_name in ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6', 'joint7']:
+            if joint_name in joint_positions:
+                arm_joints.append(joint_positions[joint_name])
+            else:
+                self.get_logger().warn(f'关节 {joint_name} 不在消息中')
+                return  # 如果缺少任何所需关节，则退出
         
-        # 更新机械臂关节角度
-        self.realhex.q[2:] = state['arm_joints']
-        
-        # 更新底盘位置和方向
-        self.base_transform[:2, 3] = [state['base_x'], state['base_y']]
-        
-        # 更新底盘方向（假设底盘只绕z轴旋转）
-        cos_yaw = np.cos(state['base_yaw'])
-        sin_yaw = np.sin(state['base_yaw'])
-        self.base_transform[:2, :2] = [[cos_yaw, -sin_yaw], [sin_yaw, cos_yaw]]
-        
-        # 更新机器人基座变换
-        self.realhex._T = self.base_transform
-        
-        # 确保底盘关节角度为0（因为底盘位置由里程计直接提供）
-        self.realhex.q[:2] = 0
-        
-        return True
-    
-    def test_vel_ctl(self):
-        self.count += 1
-        if (self.count // 200) % 2 == 0:
-            self.realhex.qd[1] = 0.3
+        # 确保我们有所有7个关节角度
+        if len(arm_joints) == 7:
+            # 获取锁，确保数据一致性
+            with self.state_lock:
+                # 保持底盘关节角度不变，更新机械臂关节
+                self.realhex.q[2:] = arm_joints
+                self.joint_state_received = True
+            self.get_logger().debug(f'已更新关节状态: {arm_joints}')
         else:
-            self.realhex.qd[1] = -0.3
-
-        self.realhex.qd[0] = 0
-        self.realhex.qd[2:] = 0
+            self.get_logger().warn(f'关节数量不正确: 期望7个，实际{len(arm_joints)}个')
     
-    def control_loop(self):
-        """主控制循环"""
-        # 更新机器人状态
-        # if not self.update_robot_state():
-        #     self.get_logger().info('等待关节状态和里程计数据...')
-        #     return
+    def odom_callback(self, msg):
+        """处理里程计消息"""
+        # 更新底盘位置
+        self.base_x = msg.pose.pose.position.x
+        self.base_y = msg.pose.pose.position.y
         
-        # 获取当前关节位置
-        # state = self.robot_state.get_state()
-        # self.current_joint_positions = state['arm_joints']
+        # 从四元数中提取偏航角
+        orientation_q = msg.pose.pose.orientation
+        _, _, self.base_yaw = quat2euler([orientation_q.w, orientation_q.x, orientation_q.y, orientation_q.z])
+
+        # 获取锁，确保数据一致性
+        with self.state_lock:
+            # 更新机器人底盘位置
+            self.base_new[:2, 3] = [self.base_x, self.base_y]
+            
+            # 更新底盘方向（假设底盘只绕z轴旋转）
+            cos_yaw = np.cos(self.base_yaw)
+            sin_yaw = np.sin(self.base_yaw)
+            self.base_new[:2, :2] = [[cos_yaw, -sin_yaw], [sin_yaw, cos_yaw]]
+            
+            self.odom_received = True
         
-        # 如果尚未到达目标，计算控制命令
-        if not self.arrived:
-            # 计算关节速度
-            self.arrived, self.realhex.qd = step_robot(self.realhex, self.wTep.A)
+        self.get_logger().debug(f'已更新底盘位置: x={self.base_x:.2f}, y={self.base_y:.2f}, yaw={self.base_yaw:.2f}')
+    
+    def target_pose_callback(self, msg):
+        """处理目标姿态消息"""
+        # 从PoseStamped消息中提取位置和方向
+        position = msg.pose.position
+        orientation = msg.pose.orientation
+        
+        # 将四元数转换为旋转矩阵
+        quat = [orientation.w, orientation.x, orientation.y, orientation.z]
+        rot_matrix = sm.SE3.RPY(quat2euler(quat, 'sxyz'))
+        
+        # 创建目标变换矩阵
+        with self.state_lock:
+            # 创建目标SE3对象
+            self.wTep = sm.SE3(position.x, position.y, position.z) * rot_matrix
+            
+            # 标记已收到目标并重置到达状态
+            self.target_received = True
+            self.arrived = False
+            
+            # 输出目标位姿信息
+            target_pos = self.wTep.A[:3, 3]
+            self.get_logger().info(f'收到新目标位姿: 位置=[{target_pos[0]:.2f}, {target_pos[1]:.2f}, {target_pos[2]:.2f}]')
+            
+            # 发布目标点标记
+            self.publish_target_marker()
+    
+    def publish_target_marker(self):
+        """发布目标点标记以在RViz中可视化为坐标轴"""
+        if not self.target_received:
+            return
+            
+        # 发布X轴（红色）
+        self.publish_axis_marker(0, [1.0, 0.0, 0.0], [0.2, 0.0, 0.0])
+        
+        # 发布Y轴（绿色）
+        self.publish_axis_marker(1, [0.0, 1.0, 0.0], [0.0, 0.2, 0.0])
+        
+        # 发布Z轴（蓝色）
+        self.publish_axis_marker(2, [0.0, 0.0, 1.0], [0.0, 0.0, 0.2])
+        
+        # 记录日志
+        self.get_logger().debug('已发布目标点坐标轴标记')
 
-            self.test_vel_ctl()
+    def publish_axis_marker(self, id, color, direction):
+        """发布单个坐标轴标记"""
+        if not self.target_received:
+            return
+        
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        
+        # 设置标记类型为箭头
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+        
+        # 设置标记ID
+        marker.id = id
+        
+        # 设置箭头起点和终点
+        marker.points = []
+        
+        # 起点是目标位置
+        start_point = Point()
+        start_point.x = self.wTep.A[0, 3]
+        start_point.y = self.wTep.A[1, 3]
+        start_point.z = self.wTep.A[2, 3]
+        marker.points.append(start_point)
+        
+        # 终点是起点加上旋转后的方向向量
+        rotation = self.wTep.A[:3, :3]
+        direction_vector = rotation @ np.array(direction)
+        
+        end_point = Point()
+        end_point.x = start_point.x + direction_vector[0]
+        end_point.y = start_point.y + direction_vector[1]
+        end_point.z = start_point.z + direction_vector[2]
+        marker.points.append(end_point)
+        
+        # 设置箭头尺寸（更小）
+        marker.scale.x = 0.01  # 箭头杆直径
+        marker.scale.y = 0.02  # 箭头头部直径
+        marker.scale.z = 0.0   # 不使用
+        
+        # 设置标记颜色
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = 1.0
+        
+        # 设置标记生命周期（持续显示）
+        lifetime = Duration()
+        lifetime.sec = 0
+        lifetime.nanosec = 0
+        marker.lifetime = lifetime
+        
+        # 发布标记
+        self.target_marker_publisher.publish(marker)
+        
+        # 记录日志
+        self.get_logger().debug(f'已发布坐标轴 {id} (颜色: {color})')
+    
+    def update_and_publish(self):
+        """计算控制命令并发布"""
+        # 如果尚未收到关节状态和里程计数据，则等待
+        if not (self.joint_state_received and self.odom_received):
+            self.get_logger().info('等待关节状态和里程计数据...')
+            return
+            
+        # 如果尚未收到目标，则等待
+        if not self.target_received:
+            return
+        
+        self.realhex._T = self.base_new
+        
+        # 获取锁，确保在计算过程中数据不会被更新
+        with self.state_lock:
+            # 如果尚未到达目标，计算控制命令
+            if not self.arrived:
+                # 计算关节速度
+                self.arrived, self.realhex.qd = step_robot(self.realhex, self.wTep.A)
 
-            dt = 0.05
-            self.realhex.q = self.realhex.q + self.realhex.qd * dt
-            
-            # 重置底盘位置
-            base_new = self.realhex.fkine(self.realhex._q, end=self.realhex.links[2])
-            self.realhex._T = base_new.A
-            
-            # 重置底盘关节角度为0
-            self.realhex.q[:2] = 0
-            
-            # 以较低频率输出当前末端位姿
-            self.pose_output_counter += 1
-            if self.pose_output_counter >= self.pose_output_interval:
-                self.pose_output_counter = 0
+                self.realhex._T = self.base_new
+
+                self.realhex.q[:2] = 0
                 
-                # 获取当前末端位姿
+                # 以较低频率输出当前末端位姿
+                self.pose_output_counter += 1
+                if self.pose_output_counter >= self.pose_output_interval:
+                    self.pose_output_counter = 0
+                    
+                    # 获取当前末端位姿
+            elif self.arrived and self.pose_output_counter != -1:
+                # 如果刚刚到达目标，输出一次到达信息
+                self.pose_output_counter = -1
                 current_ee_pose = self.realhex.fkine(self.realhex.q)
                 current_pos = current_ee_pose.A[:3, 3]
                 
                 # 输出当前位姿和是否到达目标
                 self.get_logger().info(f'当前末端位姿: 位置=[{current_pos[0]:.2f}, {current_pos[1]:.2f}, {current_pos[2]:.2f}], 是否到达: {self.arrived}')
-                print(self.realhex.qd)
-        elif self.arrived and self.pose_output_counter != -1:
-            # 如果刚刚到达目标，输出一次到达信息
-            self.pose_output_counter = -1
-            self.get_logger().info('已到达目标位姿!')
+                self.get_logger().info('已到达目标位姿! 等待新目标...')
+                
+                # 停止机器人运动
+                self.realhex.qd = np.zeros(self.realhex.n)
+            else:
+                pass
         
-        # 发布控制命令
+        # 发布底盘速度命令和关节速度命令
         self.publish_cmd_vel()
-        self.publish_joint_positions()
-        self.publish_base_tf()
+        self.publish_joint_velocities()
     
     def publish_cmd_vel(self):
         """发布底盘速度命令"""
@@ -318,6 +402,8 @@ class RealHexController(Node):
         cmd_vel = Twist()
         
         # 设置线速度和角速度
+        # 底盘的速度是realhex.qd的前两个元素
+        # 第一个元素通常是线速度，第二个元素是角速度
         if not self.arrived:
             cmd_vel.linear.x = self.realhex.qd[1]  # 前后移动
             cmd_vel.angular.z = self.realhex.qd[0]  # 旋转
@@ -333,107 +419,116 @@ class RealHexController(Node):
         if self.pose_output_counter == 0:
             self.get_logger().debug(f'发布底盘速度命令: 线速度={cmd_vel.linear.x:.3f}, 角速度={cmd_vel.angular.z:.3f}')
     
-    def publish_joint_positions(self):
-        """发布关节位置命令"""
+    def publish_joint_velocities(self):
+        """发布关节速度命令"""
         # 创建Float64MultiArray消息
         msg = Float64MultiArray()
         
-        # 计算时间步长
-        dt = 0.05  # 与定时器间隔一致
-        
-        # 计算新的关节位置 = 当前位置 + 速度 * 时间
+        # 设置数据为机械臂的关节速度 (realhex.qd[2:]表示跳过底盘的两个自由度)
         if not self.arrived:
-            # 获取机械臂关节速度 (realhex.qd[2:]表示跳过底盘的两个自由度)
-            new_positions = list(self.realhex.q[2:])
-            
-            msg.data = new_positions
+            msg.data = self.realhex.qd[2:].tolist()
         else:
-            # 如果已到达目标，保持当前位置
-            msg.data = list(self.realhex.q[2:])
+            # 如果已到达目标，停止关节移动
+            msg.data = [0.0] * (self.realhex.n - 2)
         
         # 发布消息
-        self.joint_pos_publisher.publish(msg)
+        self.joint_vel_publisher.publish(msg)
         
         # 记录日志
         if self.pose_output_counter == 0:
-            self.get_logger().debug(f'发布关节位置命令: {msg.data}')
-    
-    def publish_base_tf(self):
-        """发布基座坐标变换"""
-        t = TransformStamped()
-        
-        # 设置时间戳和坐标系
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = 'odom'
-        t.child_frame_id = 'cal_odom'
-        
-        # 从变换矩阵中提取平移
-        t.transform.translation.x = self.realhex._T[0, 3]
-        t.transform.translation.y = self.realhex._T[1, 3]
-        t.transform.translation.z = self.realhex._T[2, 3]
-        
-        # 从旋转矩阵计算四元数
-        # 提取旋转矩阵
-        R = self.realhex._T[:3, :3]
-        
-        # 计算四元数的中间变量
-        trace = R[0, 0] + R[1, 1] + R[2, 2]
-        
-        if trace > 0:
-            S = np.sqrt(trace + 1.0) * 2
-            w = 0.25 * S
-            x = (R[2, 1] - R[1, 2]) / S
-            y = (R[0, 2] - R[2, 0]) / S
-            z = (R[1, 0] - R[0, 1]) / S
-        else:
-            if R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
-                S = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2
-                w = (R[2, 1] - R[1, 2]) / S
-                x = 0.25 * S
-                y = (R[0, 1] + R[1, 0]) / S
-                z = (R[0, 2] + R[2, 0]) / S
-            elif R[1, 1] > R[2, 2]:
-                S = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2
-                w = (R[0, 2] - R[2, 0]) / S
-                x = (R[0, 1] + R[1, 0]) / S
-                y = 0.25 * S
-                z = (R[1, 2] + R[2, 1]) / S
-            else:
-                S = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2
-                w = (R[1, 0] - R[0, 1]) / S
-                x = (R[0, 2] + R[2, 0]) / S
-                y = (R[1, 2] + R[2, 1]) / S
-                z = 0.25 * S
-        
-        # 设置四元数
-        t.transform.rotation.w = w
-        t.transform.rotation.x = x
-        t.transform.rotation.y = y
-        t.transform.rotation.z = z
-        
-        # 发布变换
-        self.tf_broadcaster.sendTransform(t)
+            self.get_logger().info(f'发布关节速度命令: {msg.data}')
 
+class GoalPublisher(Node):
+    def __init__(self):
+        super().__init__('goal_publisher')
+        self.publisher = self.create_publisher(PoseStamped, '/realhex_goal', 10)
+        self.get_logger().info('目标发布器已启动，按Ctrl+C退出')
+        
+        # 提示用户输入目标位姿
+        self.get_user_input()
+        
+    def get_user_input(self):
+        print("\n请输入目标位置 (x y z):")
+        try:
+            x, y, z = map(float, input().split())
+            
+            print("\n请输入目标方向 (roll pitch yaw) [弧度]:")
+            roll, pitch, yaw = map(float, input().split())
+            
+            # 创建旋转矩阵
+            Rx = np.array([
+                [1, 0, 0],
+                [0, np.cos(roll), -np.sin(roll)],
+                [0, np.sin(roll), np.cos(roll)]
+            ])
+            
+            Ry = np.array([
+                [np.cos(pitch), 0, np.sin(pitch)],
+                [0, 1, 0],
+                [-np.sin(pitch), 0, np.cos(pitch)]
+            ])
+            
+            Rz = np.array([
+                [np.cos(yaw), -np.sin(yaw), 0],
+                [np.sin(yaw), np.cos(yaw), 0],
+                [0, 0, 1]
+            ])
+            
+            R = Rz @ Ry @ Rx
+            
+            # 转换为四元数
+            qw, qx, qy, qz = mat2quat(R)
+            
+            # 发布目标位姿
+            self.publish_goal(x, y, z, qx, qy, qz, qw)
+            
+        except ValueError:
+            self.get_logger().error('输入格式错误，请重试')
+            self.get_user_input()
+    
+    def publish_goal(self, x, y, z, qx, qy, qz, qw):
+        msg = PoseStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'map'
+        
+        msg.pose.position.x = x
+        msg.pose.position.y = y
+        msg.pose.position.z = z
+        
+        msg.pose.orientation.x = qx
+        msg.pose.orientation.y = qy
+        msg.pose.orientation.z = qz
+        msg.pose.orientation.w = qw
+        
+        self.publisher.publish(msg)
+        self.get_logger().info(f'已发布目标位姿: 位置=({x}, {y}, {z}), 方向四元数=({qw}, {qx}, {qy}, {qz})')
+        
+        # 询问是否继续发送新目标
+        print("\n是否发送新目标? (y/n)")
+        if input().lower() == 'y':
+            self.get_user_input()
+        else:
+            self.get_logger().info('退出程序')
+            rclpy.shutdown()
 
 def main():
     """ROS2节点的入口函数"""
     rclpy.init()
     
     # 创建并运行节点
-    controller = RealHexController()
+    node = RealHexNode()
     
     try:
         # 保持节点运行
-        rclpy.spin(controller)
+        rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
         # 清理资源
-        controller.destroy_node()
+        node.destroy_node()
         rclpy.shutdown()
     
     return 0
-
 
 if __name__ == "__main__":
     main()
