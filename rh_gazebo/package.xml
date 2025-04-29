@@ -20,6 +20,9 @@
   <depend>xacro</depend>
   <depend>rm_gazebo</depend>
   <depend>xpkg_urdf_echo_plus</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

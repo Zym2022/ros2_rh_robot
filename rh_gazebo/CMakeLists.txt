@@ -13,6 +13,26 @@ find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(gazebo_ros REQUIRED)
 find_package(xacro REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+
+# 添加自定义TF广播器节点
+add_executable(custom_tf_broadcaster src/custom_tf_broadcaster.cpp)
+ament_target_dependencies(custom_tf_broadcaster
+  rclcpp
+  std_msgs
+  geometry_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+)
+
+# 安装可执行文件
+install(TARGETS
+  custom_tf_broadcaster
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 # 安装launch文件
 install(DIRECTORY
@@ -23,6 +43,12 @@ install(DIRECTORY
 # 安装config文件
 install(DIRECTORY
   config
+  DESTINATION share/${PROJECT_NAME}
+)
+
+# 如果有src目录，也安装
+install(DIRECTORY
+  src
   DESTINATION share/${PROJECT_NAME}
 )
 

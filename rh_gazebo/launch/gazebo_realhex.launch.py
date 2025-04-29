@@ -54,7 +54,7 @@ def generate_launch_description():
     node_robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        parameters=[{'use_sim_time': True},
+        parameters=[{'use_sim_time': False},
                     params, {"publish_frequency": 15.0}],
         output='screen'
     )
@@ -68,7 +68,11 @@ def generate_launch_description():
     delay_seconds = 10
     load_controllers = []
     for controller in [
-            "joint_state_broadcaster", "rm_gripper_controller", "rm_group_controller", "joint_velocity_controller", "joint_position_controller"]:
+            "joint_state_broadcaster", 
+            "rm_gripper_controller", 
+            "rm_group_controller", 
+            "joint_velocity_controller", 
+            "joint_position_controller"]:
         cmd = ["ros2", "run", "controller_manager", "spawner.py", controller]
         delayed_cmd = ["sleep {}; {}".format(delay_seconds, " ".join(cmd))]
         load_controllers += [
@@ -80,13 +84,30 @@ def generate_launch_description():
         ]
 
     # 添加静态TF发布器，发布base_footprint到base_link的变换
-    static_tf_publisher = Node(
+    static_tf_publisher_footprint = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
-        name='static_transform_publisher',
+        name='static_transform_publisher_footprint',
         arguments=['0', '0', '0', '0', '0', '0', 'base_footprint', 'base_link'],
         output='screen',
-        parameters=[{'use_sim_time': True}]
+        parameters=[{'use_sim_time': False}]
+    )
+
+    # 添加自定义TF广播器，从odom到base_footprint的变换中获取数据
+    # 并以系统时间发布odom到base_link的变换
+    custom_tf_broadcaster = Node(
+        package='rh_gazebo',
+        executable='custom_tf_broadcaster',
+        name='custom_tf_broadcaster',
+        output='screen',
+        parameters=[
+            {'source_frame': 'odom'},
+            {'target_frame': 'base_footprint'},
+            {'broadcast_frame': 'base_link'},
+            {'publish_frequency': 100.0},
+            {'wait_timeout': 30.0},  # 等待30秒，足够Gazebo启动
+            {'use_sim_time': False}
+        ]
     )
 
     # 添加 RViz 配置
@@ -106,8 +127,9 @@ def generate_launch_description():
         gazebo,
         node_robot_state_publisher,
         spawn_entity,
-        static_tf_publisher,  # 添加静态TF发布器
-        rviz_node,  # 添加 RViz 节点
+        # static_tf_publisher_footprint,  # 添加静态TF发布器: base_footprint -> base_link
+        custom_tf_broadcaster,  # 添加自定义TF广播器: odom -> base_link
+        # rviz_node,  # 添加 RViz 节点
     ]
         + load_controllers
     )
