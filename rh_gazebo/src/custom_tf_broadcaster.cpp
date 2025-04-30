@@ -15,16 +15,17 @@ public:
   : Node("custom_tf_broadcaster"), transform_available_(false)
   {
     // 获取参数
-    this->declare_parameter<std::string>("source_frame", "odom");
-    this->declare_parameter<std::string>("target_frame", "base_footprint");
-    this->declare_parameter<std::string>("broadcast_frame", "base_link");
+    this->declare_parameter<std::string>("source_frame", "odom");       // 用于监听的源坐标系
+    this->declare_parameter<std::string>("target_frame", "base_footprint"); // 用于监听的目标坐标系
+    this->declare_parameter<std::string>("new_source_frame", "world");  // 新的发布源坐标系
+    this->declare_parameter<std::string>("new_target_frame", "base_link"); // 新的发布目标坐标系
     this->declare_parameter<double>("publish_frequency", 100.0);
     this->declare_parameter<double>("wait_timeout", 30.0); // 等待变换的超时时间（秒）
     
     source_frame_ = this->get_parameter("source_frame").as_string();
     target_frame_ = this->get_parameter("target_frame").as_string();
-    broadcast_frame_ = this->get_parameter("broadcast_frame").as_string();
-    double publish_frequency = this->get_parameter("publish_frequency").as_double();
+    new_source_frame_ = this->get_parameter("new_source_frame").as_string();
+    new_target_frame_ = this->get_parameter("new_target_frame").as_string();
     double wait_timeout = this->get_parameter("wait_timeout").as_double();
 
     // 创建TF广播器
@@ -37,7 +38,7 @@ public:
     RCLCPP_INFO(this->get_logger(), "自定义TF广播器已启动");
     RCLCPP_INFO(this->get_logger(), "将监听变换: %s -> %s, 并广播变换: %s -> %s",
                 source_frame_.c_str(), target_frame_.c_str(),
-                source_frame_.c_str(), broadcast_frame_.c_str());
+                new_source_frame_.c_str(), new_target_frame_.c_str());
     
     // 等待变换可用
     RCLCPP_INFO(this->get_logger(), "正在等待变换 %s -> %s 发布...", 
@@ -74,7 +75,7 @@ private:
         transform_available_ = true;
         RCLCPP_INFO(this->get_logger(), "变换 %s -> %s 已可用，开始广播 %s -> %s",
                     source_frame_.c_str(), target_frame_.c_str(),
-                    source_frame_.c_str(), broadcast_frame_.c_str());
+                    new_source_frame_.c_str(), new_target_frame_.c_str());
         
         // 创建定时广播变换的定时器
         double publish_frequency = this->get_parameter("publish_frequency").as_double();
@@ -97,16 +98,16 @@ private:
   void publish_tf()
   {
     try {
-      // 查找指定的变换
+      // 查找指定的变换 (odom -> base_footprint)
       geometry_msgs::msg::TransformStamped transform_stamped;
       transform_stamped = tf_buffer_->lookupTransform(
         source_frame_, target_frame_, tf2::TimePointZero);
 
-      // 使用当前系统时间创建新的变换
+      // 使用当前系统时间创建新的变换 (world -> base_link)
       geometry_msgs::msg::TransformStamped new_transform;
       new_transform.header.stamp = this->now(); // 使用系统实时时间
-      new_transform.header.frame_id = source_frame_;
-      new_transform.child_frame_id = broadcast_frame_;
+      new_transform.header.frame_id = new_source_frame_; // world
+      new_transform.child_frame_id = new_target_frame_; // base_link
       
       // 复制变换数据
       new_transform.transform = transform_stamped.transform;
@@ -126,7 +127,8 @@ private:
   rclcpp::TimerBase::SharedPtr timeout_timer_;
   std::string source_frame_;
   std::string target_frame_;
-  std::string broadcast_frame_;
+  std::string new_source_frame_;
+  std::string new_target_frame_;
   bool transform_available_;
 };
 
