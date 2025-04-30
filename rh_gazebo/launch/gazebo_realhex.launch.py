@@ -19,15 +19,26 @@ def generate_launch_description():
 
 
     # DECLARE Gazebo WORLD:
+    # world_name = LaunchConfiguration('world_name')
+    # declare_world_cmd = DeclareLaunchArgument(
+    #     'world_name',
+    #     default_value='momanip.world',
+    #     description='Gazebo world name')
+    # # DECLARE Gazebo WORLD file:
+    # gazebo_world_path = (
+    #     get_package_share_directory('rh_gazebo'),
+    #     '/config/',
+    #     world_name
+    # )
     world_name = LaunchConfiguration('world_name')
     declare_world_cmd = DeclareLaunchArgument(
         'world_name',
-        default_value='momanip.world',
+        default_value='realman.world',
         description='Gazebo world name')
     # DECLARE Gazebo WORLD file:
     gazebo_world_path = (
-        get_package_share_directory('rh_gazebo'),
-        '/config/',
+        get_package_share_directory('rm_gazebo'),
+        '/world/',
         world_name
     )
 
@@ -94,7 +105,7 @@ def generate_launch_description():
     )
 
     # 添加自定义TF广播器，从odom到base_footprint的变换中获取数据
-    # 并以系统时间发布odom到base_link的变换
+    # 并以系统时间发布world到base_link的变换
     custom_tf_broadcaster = Node(
         package='rh_gazebo',
         executable='custom_tf_broadcaster',
@@ -103,7 +114,8 @@ def generate_launch_description():
         parameters=[
             {'source_frame': 'odom'},
             {'target_frame': 'base_footprint'},
-            {'broadcast_frame': 'base_link'},
+            {'new_source_frame': 'world'},
+            {'new_target_frame': 'base_link'},
             {'publish_frequency': 100.0},
             {'wait_timeout': 30.0},  # 等待30秒，足够Gazebo启动
             {'use_sim_time': False}
