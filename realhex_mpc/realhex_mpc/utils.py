@@ -2,6 +2,47 @@ import numpy as np
 import bisect
 from typing import List, Tuple
 
+def generate_traj(start_pose, goal_pose, start_time, goal_time, timestep):
+    """
+    在起始位姿和目标位姿之间生成平滑轨迹
+    
+    Args:
+        start_pose: 起始位姿 [x, y, z, qx, qy, qz, qw]
+        goal_pose: 目标位姿 [x, y, z, qx, qy, qz, qw]
+        start_time: 轨迹起始时间
+        goal_time: 轨迹结束时间
+        timestep: 时间步长
+        
+    Returns:
+        time_trajectory: 时间轨迹
+        state_trajectory: 状态轨迹
+    """
+    time_trajectory = np.arange(start_time, goal_time, timestep)
+    num_steps = len(time_trajectory)
+    
+    # 分离起始和目标位姿的平移部分和旋转四元数部分
+    start_translation = start_pose[:3]
+    start_quaternion = start_pose[3:]
+    goal_translation = goal_pose[:3]
+    goal_quaternion = goal_pose[3:]
+    
+    # 插值平移部分
+    translation_trajectory = np.zeros((num_steps, 3))
+    for i in range(3):
+        translation_trajectory[:, i] = np.linspace(start_translation[i], goal_translation[i], num_steps)
+    
+    # 插值四元数部分
+    quaternion_trajectory = np.zeros((num_steps, 4))
+    for t in range(num_steps):
+        frac = t / (num_steps - 1) if num_steps > 1 else 1.0
+        quaternion_trajectory[t] = np.array(start_quaternion) * (1 - frac) + np.array(goal_quaternion) * frac
+        quaternion_trajectory[t] /= np.linalg.norm(quaternion_trajectory[t])
+    
+    # 组合轨迹
+    state_trajectory = np.hstack((translation_trajectory, quaternion_trajectory))
+    
+    return time_trajectory, state_trajectory
+
 def interpolate_trajectory(timestamps, values, query_time):
     """
     在轨迹点之间进行线性插值

@@ -3,12 +3,12 @@
 import rclpy
 from rclpy.node import Node
 from ocs2_msgs.msg import MpcFlattenedController, MpcObservation, MpcTargetTrajectories, MpcState, MpcInput
-from ocs2_msgs.srv import Reset
+from ocs2_msgs.srv import Reset, GenerateTraj
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Float64MultiArray
 import threading
 import numpy as np
-from .utils import interpolate_trajectory, find_nearest_timestamp_index
+from .utils import interpolate_trajectory, find_nearest_timestamp_index, generate_traj
 
 
 class RealHexMpcInterface(Node):
@@ -21,6 +21,9 @@ class RealHexMpcInterface(Node):
     发布：
     - /cmd_vel: 底盘速度控制指令
     - /joint_velocity_controller/commands: 关节速度控制指令
+    
+    服务：
+    - /generate_trajectory: 生成目标轨迹服务
     """
     
     def __init__(self):
@@ -70,6 +73,23 @@ class RealHexMpcInterface(Node):
             self.get_logger().info('MPC重置服务不可用，继续等待...')
         
         self.send_reset_request()
+        
+        # 创建目标轨迹发布器
+        self.target_traj_pub = self.create_publisher(
+            MpcTargetTrajectories,
+            '/mobile_manipulator_mpc_target',
+            10
+        )
+        
+        # 创建轨迹生成服务
+        self.generate_traj_server = self.create_service(
+            GenerateTraj, 
+            'generate_trajectory', 
+            self.traj_callback
+        )
+        
+        # 初始化末端位姿
+        self.arm_pose = [0.0, 0.0, 1.2, 0.0, 0.0, 0.0, 1.0]  # 默认位姿
         
         self.get_logger().info('RealHex MPC接口节点已启动')
     
@@ -146,6 +166,51 @@ class RealHexMpcInterface(Node):
                         f'发布控制命令: 线速度={cmd_vel.linear.x}, 角速度={cmd_vel.angular.z}, '
                         f'关节速度={joint_vel.data}'
                     )
+    
+    def traj_callback(self, request, response):
+        """处理轨迹生成服务请求"""
+        try:
+            goal_pose = request.goal_pose
+            time_duration = request.time
+            timestep = request.timestep
+            time_now = self.get_elapsed_time()
+            
+            # 生成轨迹
+            time_trajectory, state_trajectory = generate_traj(
+                self.arm_pose, 
+                goal_pose, 
+                time_now, 
+                time_now + time_duration, 
+                timestep
+            )
+            
+            self.get_logger().info(f'生成目标位姿轨迹: {goal_pose}')
+            
+            # 创建目标轨迹消息
+            target_trajectories = MpcTargetTrajectories()
+            target_trajectories.time_trajectory = [float(i) for i in time_trajectory]
+            target_trajectories.state_trajectory = [MpcState(value=i) for i in state_trajectory]
+            
+            # 为每个时间点创建零输入
+            input_size = 9  # 2个底盘速度 + 7个关节速度
+            target_trajectories.input_trajectory = [
+                MpcInput(value=[0.0] * input_size) for _ in time_trajectory
+            ]
+            
+            # 发布目标轨迹
+            self.target_traj_pub.publish(target_trajectories)
+            self.get_logger().info('已发布目标轨迹')
+            
+            # 更新当前末端位姿为目标位姿（假设轨迹会被执行）
+            self.arm_pose = goal_pose
+            
+            response.done = True
+            return response
+            
+        except Exception as e:
+            self.get_logger().error(f'生成轨迹失败: {e}')
+            response.done = False
+            return response
 
 
 def main(args=None):

@@ -9,6 +9,7 @@ from transforms3d.euler import quat2euler
 import threading
 from .utils import transform_odom_to_state
 import numpy as np
+import math
 
 class RealHexMpcStatePublisher(Node):
     """
@@ -56,6 +57,9 @@ class RealHexMpcStatePublisher(Node):
         self.odom_x = 0.0
         self.odom_y = 0.0
         self.odom_theta = 0.0
+        self.prev_theta = 0.0  # 添加前一个theta值来跟踪角度变化
+        self.cumulative_theta = 0.0  # 添加累积的theta值
+        self.first_odom = True  # 标记是否是第一次收到里程计数据
         self.joint_positions = [0.0] * 7  # 假设有7个关节
         self.current_input = [0.0] * 9    # 2个底盘 + 7个关节的输入
         
@@ -89,7 +93,29 @@ class RealHexMpcStatePublisher(Node):
                 msg.pose.pose.orientation.y,
                 msg.pose.pose.orientation.z
             ]
-            _, _, self.odom_theta = quat2euler(quat)
+            _, _, raw_theta = quat2euler(quat)
+            
+            # 处理角度的连续性
+            if self.first_odom:
+                self.cumulative_theta = raw_theta
+                self.prev_theta = raw_theta
+                self.first_odom = False
+            else:
+                # 计算角度差，考虑角度环绕
+                delta_theta = raw_theta - self.prev_theta
+                
+                # 处理角度跳变（当角度差超过π时）
+                if delta_theta > math.pi:
+                    delta_theta -= 2 * math.pi
+                elif delta_theta < -math.pi:
+                    delta_theta += 2 * math.pi
+                
+                # 更新累积角度
+                self.cumulative_theta += delta_theta
+                self.prev_theta = raw_theta
+            
+            # 使用累积的角度作为朝向
+            self.odom_theta = self.cumulative_theta
     
     def joint_states_callback(self, msg):
         """处理关节状态消息"""
