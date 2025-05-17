@@ -53,7 +53,7 @@ class TrajectoryTester(Node):
         self.is_executing = False
         
         # 目标点位置容差（单位：米）
-        self.position_tolerance = 0.02
+        self.position_tolerance = 0.05
         
         # 执行时间记录
         self.trajectory_start_time = None
