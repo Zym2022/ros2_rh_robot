@@ -76,12 +76,12 @@ def generate_launch_description():
                         output='screen')
 
     # Load controllers
-    delay_seconds = 10
+    delay_seconds = 3
     load_controllers = []
     for controller in [
             "joint_state_broadcaster", 
-            "rm_gripper_controller", 
-            "rm_group_controller", 
+            # "rm_gripper_controller", 
+            # "rm_group_controller", 
             "joint_velocity_controller", 
             "joint_position_controller"]:
         cmd = ["ros2", "run", "controller_manager", "spawner.py", controller]
@@ -123,7 +123,7 @@ def generate_launch_description():
     )
 
     # 添加 RViz 配置
-    rviz_config_path = '/home/zhuyiming/robot_ws/src/ros2_rh_robot/rh_gazebo/config/test.rviz'
+    rviz_config_path = '/home/zhuyiming/robot_ws/src/ros2_mobile/ros2_rh_robot/rh_gazebo/config/test.rviz'
     
     # 启动 RViz2
     rviz_node = Node(
