@@ -24,7 +24,6 @@ setup(
     entry_points={
         'console_scripts': [
             'realhex_mpc_interface = realhex_mpc.realhex_mpc_interface:main',
-            'realhex_mpc_state_publisher = realhex_mpc.realhex_mpc_state_publisher:main',
             'trajectory_tester = realhex_mpc.trajectory_tester:main',
             'mpc_debug_logger = realhex_mpc.mpc_debug_logger:main',
         ],

@@ -9,30 +9,20 @@ from launch.conditions import IfCondition
 
 
 def generate_launch_description():
-    # 启动RealHex MPC状态发布节点
-    state_publisher_node = Node(
-        package='realhex_mpc',
-        executable='realhex_mpc_state_publisher',
-        name='realhex_mpc_state_publisher',
-        parameters=[
-            {'mpc_freq': 100.0}
-        ],
-        output='screen',
-    )
-    
-    # 启动RealHex MPC接口节点
+    # 启动RealHex MPC接口节点 (整合版本 - 包含状态发布和控制接口功能)
     mpc_interface_node = Node(
         package='realhex_mpc',
         executable='realhex_mpc_interface',
         name='realhex_mpc_interface',
         parameters=[
-            {'control_freq': 100.0}
+            {'control_freq': 100.0,
+             'mpc_freq': 100.0,
+             'is_sim': True}
         ],
         output='screen',
     )
     
     # 创建启动描述
     return LaunchDescription([
-        state_publisher_node,
         mpc_interface_node
     ]) 
