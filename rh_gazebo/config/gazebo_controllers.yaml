@@ -1,0 +1,88 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100 # Hz
+    # use_sim_time: false
+
+    # rm_group_controller:
+    #   type: joint_trajectory_controller/JointTrajectoryController
+
+    # rm_gripper_controller:
+    #   type: joint_trajectory_controller/JointTrajectoryController
+
+    # rm_gripper_controller:
+    #   type: gripper_action_controller/GripperActionController
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    # joint_velocity_controller:
+    #   type: velocity_controllers/JointGroupVelocityController
+
+    joint_position_controller:
+      type: position_controllers/JointGroupPositionController
+
+rm_group_controller:
+  ros__parameters:
+    command_interfaces:
+      #- position
+      - velocity
+    state_interfaces:
+      - position
+      - velocity
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - joint7
+
+joint_position_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - joint7
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+
+# 机械臂关节角速度控制
+joint_velocity_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - joint7
+    command_interfaces:
+      - velocity
+    state_interfaces:
+      - position
+      - velocity
+
+rm_gripper_controller:
+  ros__parameters:
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    joints:
+      - gripper_joint1
+      - gripper_joint3
+# rm_gripper_controller:
+#   ros__parameters:
+#     joint: gripper_joint1,
+#     max_effort: 50.0
+
