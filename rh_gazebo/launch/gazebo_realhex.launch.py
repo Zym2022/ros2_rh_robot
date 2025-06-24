@@ -146,12 +146,12 @@ def generate_launch_description():
     ld = LaunchDescription([
         # declare_world_cmd,
         gazebo,
-        # close_evt1,
-        # close_evt2,
+        close_evt1,
+        close_evt2,
         node_robot_state_publisher,
         spawn_entity,
         # static_tf_publisher_footprint,  # 添加静态TF发布器: base_footprint -> base_link
-        # custom_tf_broadcaster,  # 添加自定义TF广播器: odom -> base_link
+        custom_tf_broadcaster,  # 添加自定义TF广播器: odom -> base_link
         # rviz_node,  # 添加 RViz 节点
     ]
     )
