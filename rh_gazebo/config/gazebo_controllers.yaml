@@ -71,18 +71,3 @@ joint_velocity_controller:
       - position
       - velocity
 
-rm_gripper_controller:
-  ros__parameters:
-    command_interfaces:
-      - position
-    state_interfaces:
-      - position
-      - velocity
-    joints:
-      - gripper_joint1
-      - gripper_joint3
-# rm_gripper_controller:
-#   ros__parameters:
-#     joint: gripper_joint1,
-#     max_effort: 50.0
-

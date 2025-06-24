@@ -47,13 +47,11 @@ def generate_launch_description():
     urdf_model_path = os.path.join(
         pkg_share, f'config/gazebo_realhex_description.urdf.xacro')
     
-    print("path---", urdf_model_path)
 
     doc = xacro.parse(open(urdf_model_path))
     xacro.process_doc(doc)
     params = {'robot_description': doc.toxml()}
 
-    print("urdf---", doc.toxml())
 
     # 启动gazebo
     gazebo =  ExecuteProcess(
@@ -148,12 +146,12 @@ def generate_launch_description():
     ld = LaunchDescription([
         # declare_world_cmd,
         gazebo,
-        close_evt1,
-        close_evt2,
+        # close_evt1,
+        # close_evt2,
         node_robot_state_publisher,
         spawn_entity,
         # static_tf_publisher_footprint,  # 添加静态TF发布器: base_footprint -> base_link
-        custom_tf_broadcaster,  # 添加自定义TF广播器: odom -> base_link
+        # custom_tf_broadcaster,  # 添加自定义TF广播器: odom -> base_link
         # rviz_node,  # 添加 RViz 节点
     ]
     )

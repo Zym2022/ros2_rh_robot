@@ -3,6 +3,9 @@
     <!-- 包含 rm_gazebo 的 xacro 文件，并传递参数 -->
     <xacro:include filename="$(find rh_gazebo)/config/arm_75_6f_description.urdf.xacro"/>
 
+    <xacro:include filename="$(find inspire_description)/urdf/inspire_gripper.urdf.xacro"/>
+    <xacro:gripper parent_link="Link7"/>
+
     <xacro:include filename="$(find xpkg_urdf_echo_plus)/urdf/sim_base.xacro"/>
 
     <joint name="arm_base_joint" type="fixed">
