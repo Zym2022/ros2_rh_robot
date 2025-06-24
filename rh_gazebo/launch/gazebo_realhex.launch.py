@@ -85,7 +85,7 @@ def generate_launch_description():
     # 这个rm_group_controller需要根据urdf文件里面引用的ros2_controllers.yaml里面的名字确定
     load_joint_trajectory_controller = ExecuteProcess(
         cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
-             'joint_position_controller'],
+             'joint_velocity_controller'],
         output='screen'
     )
 

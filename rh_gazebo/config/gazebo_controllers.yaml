@@ -15,11 +15,11 @@ controller_manager:
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 
-    # joint_velocity_controller:
-    #   type: velocity_controllers/JointGroupVelocityController
+    joint_velocity_controller:
+      type: velocity_controllers/JointGroupVelocityController
 
-    joint_position_controller:
-      type: position_controllers/JointGroupPositionController
+    # joint_position_controller:
+    #   type: position_controllers/JointGroupPositionController
 
 rm_group_controller:
   ros__parameters:

@@ -17,7 +17,7 @@ def generate_launch_description():
         parameters=[
             {'control_freq': 100.0,
              'mpc_freq': 100.0,
-             'is_sim': False}
+             'is_sim': True}
         ],
         output='screen',
     )
