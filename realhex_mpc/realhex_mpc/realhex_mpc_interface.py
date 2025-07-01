@@ -134,7 +134,8 @@ class RealHexMpcInterface(Node):
         self.current_input = [0.0] * 9    # 2个底盘 + 7个关节的输入
         
         # 末端位姿
-        self.arm_pose = [0.0, 0.0, 1.2, 0.0, 0.0, 0.0, 1.0]  # 默认位姿
+        # self.arm_pose = [0.25, 0.0, 0.67, -0.881603, 0.0226216, -0.4702807, 0.0331615]  # 默认位姿
+        self.arm_pose = [0.0, 0.0, 1.3, 0.0, 0.0, 0.0, 1.0]  # 默认位姿
         
         # 互斥锁保护共享数据
         self.state_lock = threading.Lock()
@@ -184,7 +185,8 @@ class RealHexMpcInterface(Node):
         req.reset = True
         
         # 创建一个空的目标轨迹（使用当前状态）
-        mpc_state = MpcState(value=[0.0, 0.0, 1.2, 0.0, 0.0, 0.0, 1.0])  # 3 position + 4 quaternion
+        # mpc_state = MpcState(value=[0.25, 0.0, 0.67, -0.881603, 0.0226216, -0.4702807, 0.0331615])  # 3 position + 4 quaternion
+        mpc_state = MpcState(value=[0.0, 0.0, 1.3, 0.0, 0.0, 0.0, 1.0])  # 3 position + 4 quaternion
         mpc_input = MpcInput(value=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])  # 2个底盘 + 7个关节速度
         target_traj = MpcTargetTrajectories(
             time_trajectory=[0.0],
@@ -262,6 +264,13 @@ class RealHexMpcInterface(Node):
                             for i in range(len(self.current_joint))
                         ]
                         self.joint_pos_pub.publish(joint_pos)
+
+                        print(f'>>> current_joint: {self.current_joint}')
+                        print(f'>>> control_input: {control_input}')
+                        print(f'>>> joint_pos: {joint_pos.joint}')
+                        print('==============================================')
+                        print('\n')
+
                         
                         self.get_logger().debug(
                             f'发布控制命令: 线速度={cmd_vel.linear.x}, 角速度={cmd_vel.angular.z}, '
