@@ -85,8 +85,8 @@ def generate_launch_description():
         name='realhex_mpc_interface',
         parameters=[
             {'realman_control_freq': 200.0,
-             'hexmove_control_freq': 20.0,
-             'mpc_freq': 20.0,
+             'hexmove_control_freq': 50.0,
+             'mpc_freq': 50.0,
              'is_sim': False}
         ],
         output='screen',

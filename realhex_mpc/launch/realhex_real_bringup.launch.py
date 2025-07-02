@@ -66,15 +66,16 @@ def generate_launch_description():
     # ================================================
 
     # =============rviz===============================
-    rviz_config_path = PathJoinSubstitution([
-        FindPackageShare("realhex_mpc"), "config",
-        "real.rviz"
-    ])
-
-    rviz_node = Node(name="rviz2",
-                     package="rviz2",
-                     executable="rviz2",
-                     arguments=["-d", rviz_config_path])
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', os.path.join(
+            get_package_share_directory('ocs2_mobile_manipulator_ros'),
+            'rviz/mobile_manipulator.rviz'
+        )],
+        output='screen'
+    )
     # ================================================
 
     # 添加自定义TF广播器，从odom到base_footprint的变换中获取数据

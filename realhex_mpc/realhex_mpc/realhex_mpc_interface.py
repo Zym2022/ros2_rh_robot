@@ -269,12 +269,12 @@ class RealHexMpcInterface(Node):
                             for i in range(len(self.current_joint))
                         ]
                         # TODO 可以试试直接发布state_trajectory
-                        # desired_joint_pos = interpolate_trajectory(
-                        #     self.mpc_policy.time_trajectory,
-                        #     [state_msg.value for state_msg in self.mpc_policy.state_trajectory],
-                        #     current_time
-                        # )
-                        # joint_pos.joint = [float(val) for val in desired_joint_pos[3:10]]
+                        desired_joint_pos = interpolate_trajectory(
+                            self.mpc_policy.time_trajectory,
+                            [state_msg.value for state_msg in self.mpc_policy.state_trajectory],
+                            current_time
+                        )
+                        joint_pos.joint = [float(val) for val in desired_joint_pos[3:10]]
                         
                         self.joint_pos_pub.publish(joint_pos)
 
