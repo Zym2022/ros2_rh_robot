@@ -46,12 +46,14 @@ class RealHexMpcInterface(Node):
         super().__init__('realhex_mpc_interface')
         
         # ============= 参数配置 =============
-        self.declare_parameter('control_freq', 100.0)
-        self.control_freq = self.get_parameter('control_freq').value
-        self.declare_parameter('mpc_freq', 100.0)  
-        self.mpc_freq = self.get_parameter('mpc_freq').value
+        self.declare_parameter('mpc_freq', 20.0)  
+        self.mpc_freq = self.get_parameter('mpc_freq').get_parameter_value().double_value
         self.declare_parameter('is_sim', True)
         self.is_sim = self.get_parameter('is_sim').value
+        self.declare_parameter('realman_control_freq', 200.0)
+        self.realman_control_freq = self.get_parameter('realman_control_freq').get_parameter_value().double_value
+        self.declare_parameter('hexmove_control_freq', 20.0)
+        self.hexmove_control_freq = self.get_parameter('hexmove_control_freq').get_parameter_value().double_value
         
         # ============= MPC控制相关订阅器 =============
         # 订阅MPC策略
@@ -118,6 +120,9 @@ class RealHexMpcInterface(Node):
         # ============= 状态变量 =============
         # MPC策略相关
         self.mpc_policy = MpcFlattenedController()
+        # TODO 参考real-time chucking inpainting 或者 Temporal ensembling方式去执行策略的切换部分
+        # https://pi.website/research/real_time_chunking
+        self.old_mpc_policy = MpcFlattenedController()
         self.mpc_policy_lock = threading.Lock()
         
         # 底盘状态相关
@@ -135,14 +140,15 @@ class RealHexMpcInterface(Node):
         
         # 末端位姿
         # self.arm_pose = [0.25, 0.0, 0.67, -0.881603, 0.0226216, -0.4702807, 0.0331615]  # 默认位姿
-        self.arm_pose = [0.0, 0.0, 1.3, 0.0, 0.0, 0.0, 1.0]  # 默认位姿
+        self.arm_pose = [0.0, 0.0, 1.32, 0.0, 0.0, 0.0, 1.0]  # 默认位姿
         
         # 互斥锁保护共享数据
         self.state_lock = threading.Lock()
         
         # ============= 定时器 =============
         # 控制定时器
-        self.control_timer = self.create_timer(1.0/self.control_freq, self.control_timer_callback)
+        self.realman_control_timer = self.create_timer(1.0/self.realman_control_freq, self.realman_control_timer_callback)
+        self.hexmove_control_timer = self.create_timer(1.0/self.hexmove_control_freq, self.hexmove_control_timer_callback)
         
         # MPC状态发布定时器
         self.mpc_timer = self.create_timer(1.0/self.mpc_freq, self.mpc_timer_callback)
@@ -186,7 +192,7 @@ class RealHexMpcInterface(Node):
         
         # 创建一个空的目标轨迹（使用当前状态）
         # mpc_state = MpcState(value=[0.25, 0.0, 0.67, -0.881603, 0.0226216, -0.4702807, 0.0331615])  # 3 position + 4 quaternion
-        mpc_state = MpcState(value=[0.0, 0.0, 1.3, 0.0, 0.0, 0.0, 1.0])  # 3 position + 4 quaternion
+        mpc_state = MpcState(value=[0.0, 0.0, 1.32, 0.0, 0.0, 0.0, 1.0])  # 3 position + 4 quaternion
         mpc_input = MpcInput(value=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])  # 2个底盘 + 7个关节速度
         target_traj = MpcTargetTrajectories(
             time_trajectory=[0.0],
@@ -216,7 +222,7 @@ class RealHexMpcInterface(Node):
             self.mpc_policy = msg
             self.get_logger().debug(f'收到新的MPC策略, 时间轨迹起点: {msg.time_trajectory[0]}')
     
-    def control_timer_callback(self):
+    def realman_control_timer_callback(self):
         """根据当前MPC策略计算并发布控制指令"""
         current_time = self.get_elapsed_time()
         
@@ -230,17 +236,15 @@ class RealHexMpcInterface(Node):
                 )
                 
                 if control_input:
+                    # 对小速度进行死区处理
+                    if abs(control_input[0]) < 0.05:
+                        control_input[0] = 0.0
+                    if abs(control_input[1]) < 0.05:
+                        control_input[1] = 0.0
                     # 更新当前输入（用于状态发布）
                     with self.state_lock:
                         self.current_input = control_input
-                    
-                    # 发布底盘速度命令
-                    # 假设控制输入的前两个元素分别是线速度和角速度
-                    cmd_vel = Twist()
-                    cmd_vel.linear.x = float(control_input[0])  # 线速度
-                    cmd_vel.angular.z = float(control_input[1])  # 角速度
-                    self.cmd_vel_pub.publish(cmd_vel)
-                    
+
                     if self.is_sim:
                         # 发布关节速度命令
                         # 假设控制输入的后7个元素是关节速度
@@ -249,12 +253,13 @@ class RealHexMpcInterface(Node):
                         self.joint_vel_pub.publish(joint_vel)
                         
                         self.get_logger().debug(
-                            f'发布控制命令: 线速度={cmd_vel.linear.x}, 角速度={cmd_vel.angular.z}, '
-                            f'关节速度={joint_vel.data}'
+                            f'发布控制命令: 关节速度={joint_vel.data}'
                         )
                     else:
                         # 发布关节位置命令
-                        dt = 1.0 / self.control_freq
+
+                        
+                        dt = 1.0 / self.realman_control_freq
                         joint_pos = Jointpos()
                         joint_pos.dof = 7
                         joint_pos.expand = 0.0
@@ -263,19 +268,50 @@ class RealHexMpcInterface(Node):
                             self.current_joint[i] + control_input[i+2] * dt
                             for i in range(len(self.current_joint))
                         ]
+                        # TODO 可以试试直接发布state_trajectory
+                        # desired_joint_pos = interpolate_trajectory(
+                        #     self.mpc_policy.time_trajectory,
+                        #     [state_msg.value for state_msg in self.mpc_policy.state_trajectory],
+                        #     current_time
+                        # )
+                        # joint_pos.joint = [float(val) for val in desired_joint_pos[3:10]]
+                        
                         self.joint_pos_pub.publish(joint_pos)
 
-                        print(f'>>> current_joint: {self.current_joint}')
-                        print(f'>>> control_input: {control_input}')
-                        print(f'>>> joint_pos: {joint_pos.joint}')
-                        print('==============================================')
-                        print('\n')
-
-                        
                         self.get_logger().debug(
-                            f'发布控制命令: 线速度={cmd_vel.linear.x}, 角速度={cmd_vel.angular.z}, '
-                            f'关节位置={joint_pos.joint}'
+                            f'发布控制命令: 关节位置={joint_pos.joint}'
                         )
+    
+    def hexmove_control_timer_callback(self):
+        """根据当前MPC策略计算并发布控制指令"""
+        current_time = self.get_elapsed_time()
+        
+        with self.mpc_policy_lock:
+            if len(self.mpc_policy.time_trajectory) > 0:
+                # 使用线性插值计算当前时间对应的控制输入
+                control_input = interpolate_trajectory(
+                    self.mpc_policy.time_trajectory,
+                    [input_msg.value for input_msg in self.mpc_policy.input_trajectory],
+                    current_time
+                )
+                
+                if control_input:
+                    # 对小速度进行死区处理
+                    if abs(control_input[0]) < 0.05:
+                        control_input[0] = 0.0
+                    if abs(control_input[1]) < 0.05:
+                        control_input[1] = 0.0
+                    # 更新当前输入（用于状态发布）
+                    with self.state_lock:
+                        self.current_input = control_input
+                    
+                    # 发布底盘速度命令
+                    cmd_vel = Twist()
+                    cmd_vel.linear.x = float(control_input[0])  # 线速度
+                    cmd_vel.angular.z = float(control_input[1])  # 角速度
+                    self.cmd_vel_pub.publish(cmd_vel)
+                    
+                    
     
     # ============= MPC状态相关回调函数 =============
     def odom_callback(self, msg):
