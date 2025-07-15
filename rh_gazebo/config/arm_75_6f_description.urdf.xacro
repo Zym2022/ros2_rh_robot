@@ -58,7 +58,7 @@
                 <param name="max">1.0</param>
             </command_interface>
             <state_interface name="position">
-                <param name="initial_value">0</param>
+                <param name="initial_value">0.0</param>
             </state_interface>
             <state_interface name="velocity"/>
         </joint>
@@ -68,7 +68,7 @@
                 <param name="max">1.0</param>
             </command_interface>
             <state_interface name="position">
-                <param name="initial_value">0</param>
+                <param name="initial_value">-0.97350057</param>
             </state_interface>
             <state_interface name="velocity"/>
         </joint>
@@ -78,7 +78,7 @@
                 <param name="max">1.0</param>
             </command_interface>
             <state_interface name="position">
-                <param name="initial_value">0</param>
+                <param name="initial_value">0.021603100615739824</param>
             </state_interface>
             <state_interface name="velocity"/>
         </joint>
@@ -88,7 +88,7 @@
                 <param name="max">1.0</param>
             </command_interface>
             <state_interface name="position">
-                <param name="initial_value">0</param>
+                <param name="initial_value">1.8</param>
             </state_interface>
             <state_interface name="velocity"/>
         </joint>
@@ -98,7 +98,7 @@
                 <param name="max">1.0</param>
             </command_interface>
             <state_interface name="position">
-                <param name="initial_value">0</param>
+                <param name="initial_value">-0.023854149717092515</param>
             </state_interface>
             <state_interface name="velocity"/>
         </joint>
@@ -108,7 +108,7 @@
                 <param name="max">1.0</param>
             </command_interface>
             <state_interface name="position">
-                <param name="initial_value">0</param>
+                <param name="initial_value">1.5</param>
             </state_interface>
             <state_interface name="velocity"/>
         </joint>
@@ -118,7 +118,7 @@
                 <param name="max">1.0</param>
             </command_interface>
             <state_interface name="position">
-                <param name="initial_value">0</param>
+                <param name="initial_value">3.1415</param>
             </state_interface>
             <state_interface name="velocity"/>
         </joint>

@@ -18,6 +18,7 @@ def generate_traj(start_pose, goal_pose, start_time, goal_time, timestep):
         state_trajectory: 状态轨迹
     """
     time_trajectory = np.arange(start_time, goal_time, timestep)
+    time_trajectory = np.append(time_trajectory, goal_time)
     num_steps = len(time_trajectory)
     
     # 分离起始和目标位姿的平移部分和旋转四元数部分

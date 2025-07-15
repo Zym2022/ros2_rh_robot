@@ -12,7 +12,7 @@ def generate_launch_description():
     # 启动RealHex MPC接口节点 (整合版本 - 包含状态发布和控制接口功能)
     mpc_interface_node = Node(
         package='realhex_mpc',
-        executable='realhex_mpc_interface',
+        executable='test_realhex_mpc_interface',
         name='realhex_mpc_interface',
         parameters=[
             {'realman_control_freq': 200.0,

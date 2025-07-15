@@ -2,15 +2,19 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
+from rclpy.duration import Duration
 from ocs2_msgs.msg import MpcFlattenedController, MpcObservation, MpcTargetTrajectories, MpcState, MpcInput
 from ocs2_msgs.srv import Reset, GenerateTraj
+from tf2_ros.buffer import Buffer
+from tf2_ros import TransformStamped
+from tf2_ros.transform_listener import TransformListener
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Float64MultiArray
 from rm_ros_interfaces.msg import Jointpos
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import JointState
 import threading
-import numpy as np
 import math
 from transforms3d.euler import quat2euler
 from .utils import interpolate_trajectory, find_nearest_timestamp_index, generate_traj, transform_odom_to_state
@@ -140,10 +144,13 @@ class RealHexMpcInterface(Node):
         
         # 末端位姿
         # self.arm_pose = [0.25, 0.0, 0.67, -0.881603, 0.0226216, -0.4702807, 0.0331615]  # 默认位姿
-        self.arm_pose = [0.2, 0.0, 1.32, 0.0, 0.0, 0.0, 1.0]  # 默认位姿
+        self.arm_pose = None  # 初始化为None，等待TF数据
         
         # 互斥锁保护共享数据
         self.state_lock = threading.Lock()
+        
+        # 重置请求相关
+        self.reset_retry_timer = None
         
         # ============= 定时器 =============
         # 控制定时器
@@ -167,6 +174,9 @@ class RealHexMpcInterface(Node):
             'generate_trajectory', 
             self.traj_callback
         )
+
+        # ============= 初始化TF =============
+        self.init_tf()
         
         # ============= 初始化 =============
         # 等待MPC启动并发送初始重置
@@ -183,16 +193,76 @@ class RealHexMpcInterface(Node):
         current_time = self.get_clock().now()
         elapsed_time = (current_time - self.start_time).nanoseconds * 1e-9
         return float(elapsed_time)
+
+    def init_tf(self):
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.source_frame = 'world'  # 源坐标系
+        self.target_frame = 'gripper_tip_link'
+        # 每 0.01 秒执行一次 get_transform 函数
+        self.tf_timer = self.create_timer(0.01, self.get_end_effect_transform)
+
+    def get_end_effect_transform(self):
+        try:
+            # 如果没有找到任何可用的坐标系,则退出
+            if self.target_frame is None:
+                self.get_logger().error("No valid target frame found.")
+                return
+            # 获取 source_frame 到 target_frame 的变换
+            # 使用零时间戳和超时参数获取最新的可用变换，避免时间同步问题
+            transform: TransformStamped = self.tf_buffer.lookup_transform(
+                self.source_frame,
+                self.target_frame,
+                Time(),
+                Duration(nanoseconds=100000000))
+
+            # 检查是否是第一次成功获取TF数据
+            first_tf_success = self.arm_pose is None
+            
+            self.arm_pose = [
+                transform.transform.translation.x,
+                transform.transform.translation.y,
+                transform.transform.translation.z,
+                transform.transform.rotation.x,
+                transform.transform.rotation.y,
+                transform.transform.rotation.z,
+                transform.transform.rotation.w,
+            ]
+            
+            # 如果是第一次成功获取TF数据，记录日志
+            if first_tf_success:
+                self.get_logger().info(f'成功获取TF数据，末端位姿: {self.arm_pose}')
+                
+        except Exception as e:
+            # 获取节点启动后的时间
+            elapsed_time = self.get_elapsed_time()
+            # 只在启动10秒后还出现错误时才记录警告，避免启动时的正常等待过程产生错误日志
+            if elapsed_time > 10.0:
+                self.get_logger().warn(
+                    f"Warning: TF transform not available after {elapsed_time:.1f}s: {e}")
+            # 在启动阶段静默处理，不产生错误日志
     
     # ============= MPC控制相关回调函数 =============
     def send_reset_request(self):
         """发送MPC重置请求"""
+        # 等待TF数据可用
+        if self.arm_pose is None:
+            self.get_logger().info('等待TF数据可用以发送MPC重置请求...')
+            # 创建一个定时器来重试（避免重复创建）
+            if self.reset_retry_timer is None:
+                self.reset_retry_timer = self.create_timer(0.5, self.retry_reset_request)
+            return
+        
+        # 取消重试定时器（如果存在）
+        if self.reset_retry_timer is not None:
+            self.reset_retry_timer.cancel()
+            self.reset_retry_timer = None
+        
         req = Reset.Request()
         req.reset = True
         
-        # 创建一个空的目标轨迹（使用当前状态）
-        # mpc_state = MpcState(value=[0.25, 0.0, 0.67, -0.881603, 0.0226216, -0.4702807, 0.0331615])  # 3 position + 4 quaternion
-        mpc_state = MpcState(value=[0.2, 0.0, 1.32, 0.0, 0.0, 0.0, 1.0])  # 3 position + 4 quaternion
+        # 创建一个空的目标轨迹（使用当前TF获取的位姿）
+        mpc_state = MpcState(value=self.arm_pose)  # 使用实际的末端位姿
         mpc_input = MpcInput(value=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])  # 2个底盘 + 7个关节速度
         target_traj = MpcTargetTrajectories(
             time_trajectory=[0.0],
@@ -204,6 +274,18 @@ class RealHexMpcInterface(Node):
         # 发送请求
         future = self.reset_client.call_async(req)
         future.add_done_callback(self.reset_response_callback)
+    
+    def retry_reset_request(self):
+        """重试发送MPC重置请求"""
+        if self.arm_pose is not None:
+            self.get_logger().info('TF数据已可用，发送MPC重置请求...')
+            # 取消重试定时器
+            if self.reset_retry_timer is not None:
+                self.reset_retry_timer.cancel()
+                self.reset_retry_timer = None
+            # 发送重置请求
+            self.send_reset_request()
+        # 如果还是没有数据，定时器会自动继续触发
     
     def reset_response_callback(self, future):
         """处理重置响应"""
@@ -402,6 +484,12 @@ class RealHexMpcInterface(Node):
     def traj_callback(self, request, response):
         """处理轨迹生成服务请求"""
         try:
+            # 检查TF数据是否可用
+            if self.arm_pose is None:
+                self.get_logger().error('TF数据尚未可用，无法生成轨迹')
+                response.done = False
+                return response
+            
             goal_pose = request.goal_pose
             time_duration = request.time
             timestep = request.timestep
@@ -432,9 +520,6 @@ class RealHexMpcInterface(Node):
             # 发布目标轨迹
             self.target_traj_pub.publish(target_trajectories)
             self.get_logger().info('已发布目标轨迹')
-            
-            # 更新当前末端位姿为目标位姿（假设轨迹会被执行）
-            self.arm_pose = goal_pose
             
             response.done = True
             return response

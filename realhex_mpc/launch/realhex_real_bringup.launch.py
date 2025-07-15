@@ -101,7 +101,7 @@ def generate_launch_description():
         xnode_vehicle,
         rm_75_driver,
         realhex_description,
-        rviz_node,
+        # rviz_node,
         custom_tf_broadcaster
     ])
 
