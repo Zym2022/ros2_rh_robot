@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:macro name="mobile_base_ros2_control" params="name">
+        <ros2_control name="${name}" type="system">
+            <hardware>
+                <!-- Use mock components for simulation/testing -->
+                <plugin>mock_components/GenericSystem</plugin>
+            </hardware>
+            
+            <!-- Virtual joint for mobile base position (planar joint) -->
+            <!-- This represents the mobile base's position in 2D space (x, y, theta) -->
+            <joint name="position">
+                <command_interface name="position"/>
+                
+                <!-- State interfaces for feedback -->
+                <state_interface name="position"/>
+                <state_interface name="velocity"/>
+            </joint>
+        </ros2_control>
+    </xacro:macro>
+</robot> 

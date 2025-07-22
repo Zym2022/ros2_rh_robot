@@ -1,0 +1,38 @@
+<?xml version="1.0" ?>
+<!--This does not replace URDF, and is not an extension of URDF.
+    This is a format for representing semantic information about the robot structure.
+    A URDF file must exist for this robot as well, where the joints and links that are referenced are defined
+-->
+<robot name="mobile_base_moveit">
+    <!--VIRTUAL JOINT: Purpose: this virtual joint represents the connection of the robot to the odom-->
+    <virtual_joint name="position" type="planar" parent_frame="odom" child_link="mobile_base"/>
+    <!--JOINT PROPERTIES: Configure joint motion models and constraints -->
+    <!-- Configure the planar joint for differential drive motion -->
+    <joint_property joint_name="position" property_name="motion_model" value="diff_drive" />
+    <joint_property joint_name="position" property_name="min_translational_distance" value="0.01" />
+    <joint_property joint_name="position" property_name="angular_distance_weight" value="0.5" />
+
+    <!--GROUPS: Representation of a set of joints and links. This can be useful for specifying DOF to plan for, defining arms, end effectors, etc-->
+    <!--LINKS: When a link is specified, the parent joint of that link (if it exists) is automatically included-->
+    <!--JOINTS: When a joint is specified, the child link of that joint (which will always exist) is automatically included-->
+    
+    <!-- Mobile base group - includes the planar joint for navigation planning -->
+    <group name="mobile">
+        <joint name="position"/>
+    </group>
+
+    <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
+    <!-- Disable self-collision for wheels and base -->
+    <disable_collisions link1="mobile_base" link2="LeftBackWheel_Link" reason="Adjacent"/>
+    <disable_collisions link1="mobile_base" link2="LeftFrontWheel_Link" reason="Adjacent"/>
+    <disable_collisions link1="mobile_base" link2="RightBackWheel_Link" reason="Adjacent"/>
+    <disable_collisions link1="mobile_base" link2="RightFrontWheel_Link" reason="Adjacent"/>
+    
+    <!-- Disable wheel to wheel collisions -->
+    <disable_collisions link1="LeftBackWheel_Link" link2="LeftFrontWheel_Link" reason="Never"/>
+    <disable_collisions link1="LeftBackWheel_Link" link2="RightBackWheel_Link" reason="Never"/>
+    <disable_collisions link1="LeftBackWheel_Link" link2="RightFrontWheel_Link" reason="Never"/>
+    <disable_collisions link1="LeftFrontWheel_Link" link2="RightBackWheel_Link" reason="Never"/>
+    <disable_collisions link1="LeftFrontWheel_Link" link2="RightFrontWheel_Link" reason="Never"/>
+    <disable_collisions link1="RightBackWheel_Link" link2="RightFrontWheel_Link" reason="Never"/>
+</robot> 

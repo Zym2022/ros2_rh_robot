@@ -1,0 +1,79 @@
+/**:
+  ros__parameters:
+    planning_pipelines:
+      pipeline_names:
+        - ompl
+
+    ompl:
+      planning_plugins:
+        - ompl_interface/OMPLPlanner
+      request_adapters:
+        - default_planner_request_adapters/AddTimeOptimalParameterization
+        - default_planner_request_adapters/FixWorkspaceBounds
+        - default_planner_request_adapters/FixStartStateBounds
+        - default_planner_request_adapters/FixStartStateCollision
+        - default_planner_request_adapters/FixStartStatePathConstraints
+      response_adapters:
+        - default_planner_response_adapters/AddTimeOptimalParameterization
+        - default_planner_response_adapters/PostProcessWaypoints
+        - default_planner_response_adapters/RemoveEmptyWaypoints
+
+    # Default planner configuration for mobile base
+    default_planner_config:
+      type: geometric::RRTConnect
+      range: 0.0  # Max motion added to tree. 0.0 means auto-determine
+
+    # Configuration specific to mobile group
+    mobile:
+      default_planner_config:
+        type: geometric::RRTConnect
+        range: 0.0
+        goal_bias: 0.05
+        longest_valid_segment_fraction: 0.01
+      planner_configs:
+        - RRTConnect
+        - RRT
+        - EST
+        - SBL
+        - KPIECE
+        - BKPIECE
+        - LBKPIECE
+
+    # Planner-specific configurations
+    RRTConnect:
+      type: geometric::RRTConnect
+      range: 0.0
+      goal_bias: 0.05
+
+    RRT:
+      type: geometric::RRT
+      range: 0.0
+      goal_bias: 0.05
+
+    EST:
+      type: geometric::EST
+      range: 0.0
+      goal_bias: 0.05
+
+    SBL:
+      type: geometric::SBL
+      range: 0.0
+
+    KPIECE:
+      type: geometric::KPIECE
+      range: 0.0
+      goal_bias: 0.05
+      border_fraction: 0.9
+      failed_expansion_score_factor: 0.5
+
+    BKPIECE:
+      type: geometric::BKPIECE
+      range: 0.0
+      border_fraction: 0.9
+      failed_expansion_score_factor: 0.5
+
+    LBKPIECE:
+      type: geometric::LBKPIECE
+      range: 0.0
+      border_fraction: 0.9
+      failed_expansion_score_factor: 0.5 

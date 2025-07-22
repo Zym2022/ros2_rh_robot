@@ -1,0 +1,27 @@
+# MoveIt Controllers Configuration
+# This file configures how MoveIt communicates with ros2_control controllers
+
+moveit_simple_controller_manager:
+  controller_names:
+    - arm_controller
+    - base_controller
+
+arm_controller:
+  type: FollowJointTrajectory
+  action_ns: /arm_controller/follow_joint_trajectory
+  default: true
+  joints:
+    - joint1
+    - joint2
+    - joint3
+    - joint4
+    - joint5
+    - joint6
+    - joint7
+
+base_controller:
+  type: FollowJointTrajectory
+  action_ns: /base_controller/follow_joint_trajectory
+  default: true
+  joints:
+    - position 

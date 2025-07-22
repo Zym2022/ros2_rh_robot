@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="mobile_base_moveit">
+
+    <!-- Include the simplified mobile base model -->
+    <xacro:include filename="$(find rh_moveit)/config/mobile_base/hexmove_simplfied_model.xacro"/>
+
+    <!-- Include ros2_control configuration -->
+    <xacro:include filename="$(find rh_moveit)/config/mobile_base/mobile_base.ros2_control.xacro"/>
+
+    <!-- Instantiate the ros2_control configuration -->
+    <xacro:mobile_base_ros2_control name="MobileBaseHardware"/>
+
+</robot> 

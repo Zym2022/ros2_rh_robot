@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="realhex">
+
+    <xacro:arg name="link7_type" default="Link7_6f" />
+
+    <xacro:include filename="$(find rm_description)/urdf/rm_75.urdf.xacro" ns="rm_75" link7_type="$(arg link7_type)"/>
+
+    <xacro:include filename="$(find inspire_description)/urdf/inspire_gripper.urdf.xacro"/>
+    <xacro:gripper parent_link="Link7"/>
+
+    <xacro:include filename="$(find rh_moveit)/config/mobile_base/hexmove_simplfied_model.xacro"/>
+
+    <joint name="arm_base_joint" type="fixed">
+        <parent link="mobile_base"/>
+        <child link="base_link"/>
+        <origin xyz="0.02171 0 0.36" rpy="0 0 0"/>
+    </joint>
+    
+    <!-- Include mobile base ros2_control configuration -->
+    <xacro:include filename="$(find rh_moveit)/config/mobile_base/mobile_base.ros2_control.xacro"/>
+    
+    <!-- Include realman arm ros2_control configuration -->
+    <xacro:include filename="$(find rh_moveit)/config/realhex/realman.ros2_control.xacro" />
+    
+    <!-- Instantiate the mobile base ros2_control configuration -->
+    <xacro:mobile_base_ros2_control name="MobileBaseHardware"/>
+    
+    <!-- Instantiate the realman arm ros2_control configuration -->
+    <xacro:realman_ros2_control name="ArmHardware"/>
+
+</robot>
